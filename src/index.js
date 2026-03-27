@@ -32,7 +32,6 @@ app.use('/api/', apiLimiter);
 
 // Статика (загруженные изображения)
 app.use('/uploads', express.static(path.resolve(config.upload.dir)));
-
 // ═══ PUBLIC роуты (Mini App) ═══
 app.use('/api/categories', require('./modules/categories/routes'));
 app.use('/api/items', require('./modules/items/routes'));
@@ -40,11 +39,14 @@ app.use('/api/offices', require('./modules/offices/routes'));
 app.use('/api/promo', require('./modules/promos/routes'));
 app.use('/api/orders', require('./modules/orders/public.routes'));
 app.use('/api/users', require('./modules/users/routes'));
+app.use('/api/settings', require('./modules/settings/routes'));
+app.use('/api/favorites', require('./modules/favorites/routes'));
+app.use('/api/reviews', require('./modules/reviews/routes'));
 
 // ═══ WEBHOOK (Finik) ═══
 app.use('/api/webhooks', require('./modules/payments/routes'));
 
-// ═══ ADMIN роуты (каждый со своим роутером + authMiddleware) ═══
+// ═══ ADMIN роуты ═══
 app.use('/api/admin/auth', require('./modules/auth/routes'));
 app.use('/api/admin/categories', require('./modules/categories/admin.routes'));
 app.use('/api/admin/items', require('./modules/items/admin.routes'));
@@ -53,6 +55,7 @@ app.use('/api/admin/promos', require('./modules/promos/admin.routes'));
 app.use('/api/admin/orders', require('./modules/orders/admin.routes'));
 app.use('/api/admin/users', require('./modules/users/admin.routes'));
 app.use('/api/admin/stats', require('./modules/stats/routes'));
+app.use('/api/admin/settings', require('./modules/settings/routes'));
 
 // ═══ PRINT роуты (admin) ═══
 app.use('/api/admin', require('./modules/print/routes'));

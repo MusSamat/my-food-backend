@@ -6,6 +6,37 @@ const { autoPrintIfEnabled } = require('../print/service');
 
 const router = Router();
 
+// ─── Helper: get restaurant settings ───
+const getSettings = async () => {
+    const { rows } = await pool.query('SELECT * FROM restaurant_settings LIMIT 1');
+    return rows[0] || { delivery_fee: 150, min_order_amount: 0, working_hours_from: '10:00', working_hours_to: '23:00', is_open: true };
+};
+
+const isRestaurantOpen = (settings) => {
+    if (!settings.is_open) return false;
+    const now = new Date();
+    const current = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    return current >= settings.working_hours_from && current <= settings.working_hours_to;
+};
+
+// GET /api/orders/history/:telegramId
+router.get('/history/:telegramId', asyncHandler(async (req, res) => {
+    const { rows } = await pool.query(`
+        SELECT o.id, o.status, o.total, o.type, o.address, o.created_at,
+               COALESCE(json_agg(
+                                json_build_object('item_id', oi.item_id, 'item_name', oi.item_name,
+                                                  'quantity', oi.quantity, 'price', oi.price_at_order)
+                        ) FILTER (WHERE oi.id IS NOT NULL), '[]') as items
+        FROM orders o
+                 LEFT JOIN order_items oi ON oi.order_id = o.id
+        WHERE o.telegram_user_id = $1
+        GROUP BY o.id
+        ORDER BY o.created_at DESC
+            LIMIT 50
+    `, [req.params.telegramId]);
+    res.json({ success: true, data: rows });
+}));
+
 // POST /api/orders
 router.post('/', asyncHandler(async (req, res) => {
     const {
@@ -16,10 +47,17 @@ router.post('/', asyncHandler(async (req, res) => {
         items, promo_code,
     } = req.body;
 
+    // ─── Валидация ───
     if (!telegram_user_id) throw new AppError('telegram_user_id обязателен', 400);
     if (!name || !phone) throw new AppError('Имя и телефон обязательны', 400);
     if (!items || !items.length) throw new AppError('Корзина пуста', 400);
     if (type === 'delivery' && !address) throw new AppError('Укажите адрес доставки', 400);
+
+    // ─── Проверяем время работы ───
+    const settings = await getSettings();
+    if (!isRestaurantOpen(settings)) {
+        throw new AppError(`Ресторан закрыт. Время работы: ${settings.working_hours_from} — ${settings.working_hours_to}`, 400);
+    }
 
     const result = await pool.transaction(async (client) => {
         const itemIds = items.map(i => i.id);
@@ -42,6 +80,12 @@ router.post('/', asyncHandler(async (req, res) => {
             orderItems.push({ item_id: dbItem.id, item_name: dbItem.name_ru, quantity: qty, price_at_order: dbItem.price });
         }
 
+        // ─── Проверяем минимальный заказ ───
+        if (settings.min_order_amount > 0 && subtotal < settings.min_order_amount) {
+            throw new AppError(`Минимальная сумма заказа: ${settings.min_order_amount} сом`, 400);
+        }
+
+        // ─── Промокод ───
         let discount = 0, promoId = null, promoCodeStr = null;
         if (promo_code) {
             const { rows: promos } = await client.query(
@@ -61,7 +105,8 @@ router.post('/', asyncHandler(async (req, res) => {
             }
         }
 
-        const deliveryFee = type === 'delivery' ? 150 : 0;
+        // ─── Доставка из настроек ───
+        const deliveryFee = type === 'delivery' ? settings.delivery_fee : 0;
         const total = subtotal - discount + deliveryFee;
 
         const { rows: [order] } = await client.query(
@@ -73,9 +118,9 @@ router.post('/', asyncHandler(async (req, res) => {
              VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,'pending_payment','pending')
              RETURNING *`,
             [telegram_user_id, telegram_username || null, type || 'delivery', name, phone,
-             address || null, apartment || null, floor || null, entrance || null, courier_comment || null,
-             office_id || null, comment || null, cutlery_count || 1,
-             subtotal, discount, deliveryFee, total, promoId, promoCodeStr]
+                address || null, apartment || null, floor || null, entrance || null, courier_comment || null,
+                office_id || null, comment || null, cutlery_count || 1,
+                subtotal, discount, deliveryFee, total, promoId, promoCodeStr]
         );
 
         for (const oi of orderItems) {
@@ -94,13 +139,9 @@ router.post('/', asyncHandler(async (req, res) => {
     });
 
     try {
-        // const { paymentId, paymentUrl } = await createPayment({
-        //     amount: result.order.total, orderId: result.order.id, description: `Заказ #${result.order.id}`,
-        // });
-
-        const paymentUrl = 'https://finik.kg/test-payment';
-        const paymentId = 'test_fake_id_123';
-
+        const { paymentId, paymentUrl } = await createPayment({
+            amount: result.order.total, orderId: result.order.id, description: `Заказ #${result.order.id}`,
+        });
         await pool.query('UPDATE orders SET payment_id = $1, payment_url = $2 WHERE id = $3',
             [paymentId, paymentUrl, result.order.id]);
 
@@ -109,26 +150,6 @@ router.post('/', asyncHandler(async (req, res) => {
         await pool.query("UPDATE orders SET status = 'cancelled' WHERE id = $1", [result.order.id]);
         throw new AppError('Ошибка создания платежа: ' + err.message, 502);
     }
-}));
-
-
-// GET /api/orders/history/:telegramId
-router.get('/history/:telegramId', asyncHandler(async (req, res) => {
-    const { rows } = await pool.query(`
-        SELECT o.id, o.status, o.total, o.type, o.address, o.created_at,
-            COALESCE(json_agg(
-                json_build_object('item_id', oi.item_id, 'item_name', oi.item_name,
-                    'quantity', oi.quantity, 'price', oi.price_at_order)
-            ) FILTER (WHERE oi.id IS NOT NULL), '[]') as items
-        FROM orders o
-        LEFT JOIN order_items oi ON oi.order_id = o.id
-        WHERE o.telegram_user_id = $1
-        GROUP BY o.id
-        ORDER BY o.created_at DESC
-        LIMIT 50
-    `, [req.params.telegramId]);
-
-    res.json({ success: true, data: rows });
 }));
 
 // GET /api/orders/:id/status
