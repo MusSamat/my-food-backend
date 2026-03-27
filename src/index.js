@@ -42,6 +42,7 @@ app.use('/api/users', require('./modules/users/routes'));
 app.use('/api/settings', require('./modules/settings/routes'));
 app.use('/api/favorites', require('./modules/favorites/routes'));
 app.use('/api/reviews', require('./modules/reviews/routes'));
+app.use('/api/branches', require('./modules/branches/routes'));
 
 // ═══ WEBHOOK (Finik) ═══
 app.use('/api/webhooks', require('./modules/payments/routes'));
@@ -56,6 +57,7 @@ app.use('/api/admin/orders', require('./modules/orders/admin.routes'));
 app.use('/api/admin/users', require('./modules/users/admin.routes'));
 app.use('/api/admin/stats', require('./modules/stats/routes'));
 app.use('/api/admin/settings', require('./modules/settings/routes'));
+app.use('/api/admin/branches', require('./modules/branches/routes'));
 
 // ═══ PRINT роуты (admin) ═══
 app.use('/api/admin', require('./modules/print/routes'));
