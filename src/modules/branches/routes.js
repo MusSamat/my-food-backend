@@ -15,7 +15,7 @@ const getBishkekTime = () => {
 // ─── PUBLIC ───
 
 router.get('/public', asyncHandler(async (req, res) => {
-    const { rows } = await pool.query('SELECT id, name, address, phone, lat, lng FROM branches WHERE is_open = true ORDER BY sort_order');
+    const { rows } = await pool.query('SELECT id, name, address, phone, lat, lng, working_hours_from, working_hours_to, is_open FROM branches ORDER BY sort_order');
     res.json({ success: true, data: rows });
 }));
 
