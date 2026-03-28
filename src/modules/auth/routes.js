@@ -12,10 +12,7 @@ router.post('/login', asyncHandler(async (req, res) => {
     const { username, password } = req.body;
     if (!username || !password) throw new AppError('Введите логин и пароль', 400);
 
-    const { rows } = await pool.query(
-        'SELECT * FROM admins WHERE username = $1 AND is_active = true',
-        [username]
-    );
+    const { rows } = await pool.query('SELECT * FROM admins WHERE username = $1 AND is_active = true', [username]);
     if (!rows.length) throw new AppError('Неверный логин или пароль', 401);
 
     const admin = rows[0];
@@ -32,19 +29,13 @@ router.post('/login', asyncHandler(async (req, res) => {
         success: true,
         data: {
             token,
-            admin: {
-                id: admin.id, username: admin.username, name: admin.name,
-                role: admin.role, branch_id: admin.branch_id || null,
-            },
+            admin: { id: admin.id, username: admin.username, name: admin.name, role: admin.role, branch_id: admin.branch_id },
         },
     });
 }));
 
 router.get('/me', authMiddleware, asyncHandler(async (req, res) => {
-    const { rows } = await pool.query(
-        'SELECT id, username, name, role, branch_id FROM admins WHERE id = $1',
-        [req.admin.id]
-    );
+    const { rows } = await pool.query('SELECT id, username, name, role, branch_id FROM admins WHERE id = $1', [req.admin.id]);
     res.json({ success: true, data: rows[0] });
 }));
 

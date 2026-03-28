@@ -11,21 +11,20 @@ const direction = process.argv[2];
     try {
         if (direction === 'down') {
             console.log('Rolling back...');
-            await pool.query(m004.DOWN).catch(e => console.log('004 down:', e.message));
-            await pool.query(m003.DOWN).catch(e => console.log('003 down:', e.message));
-            await pool.query(m002.DOWN).catch(e => console.log('002 down:', e.message));
-            await pool.query(m001.DOWN).catch(e => console.log('001 down:', e.message));
-            console.log('Done.');
+            await pool.query(m004.DOWN).catch(e => console.log('004:', e.message));
+            await pool.query(m003.DOWN).catch(e => console.log('003:', e.message));
+            await pool.query(m002.DOWN).catch(e => console.log('002:', e.message));
+            await pool.query(m001.DOWN).catch(e => console.log('001:', e.message));
         } else {
             console.log('Running migrations...');
             await pool.query(m001.UP).then(() => console.log('001 applied')).catch(() => console.log('001 skip'));
             await pool.query(m002.UP).then(() => console.log('002 applied')).catch(() => console.log('002 skip'));
             await pool.query(m003.UP).then(() => console.log('003 applied')).catch(() => console.log('003 skip'));
             await pool.query(m004.UP).then(() => console.log('004 applied')).catch(e => console.log('004 error:', e.message));
-            console.log('Done.');
         }
+        console.log('Done.');
     } catch (err) {
-        console.error('Migration failed:', err.message);
+        console.error('Failed:', err.message);
         process.exit(1);
     } finally {
         await pool.end();

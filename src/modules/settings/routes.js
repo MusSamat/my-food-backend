@@ -5,36 +5,25 @@ const authMiddleware = require('../../middleware/auth');
 
 const router = Router();
 
+// GET /api/settings — public (global restaurant info)
 router.get('/', asyncHandler(async (req, res) => {
     const { rows } = await pool.query('SELECT * FROM restaurant_settings ORDER BY id LIMIT 1');
     const settings = rows[0] || {
-        delivery_fee: 150, min_order_amount: 0,
-        working_hours_from: '10:00', working_hours_to: '23:00', is_open: true,
+        restaurant_name: 'Food Delivery', currency: 'сом',
+        logo_url: null, contact_phone: null, contact_email: null,
+        telegram_channel: null, about_text: null,
     };
-
-    let isCurrentlyOpen = false;
-
-    if (!settings.is_open) {
-        isCurrentlyOpen = false;
-    } else if (settings.working_hours_from === '00:00' && settings.working_hours_to === '23:59') {
-        // 24/7 mode
-        isCurrentlyOpen = true;
-    } else {
-        const now = new Date();
-        const bishkekOffset = 6;
-        const localHours = (now.getUTCHours() + bishkekOffset) % 24;
-        const current = `${String(localHours).padStart(2, '0')}:${String(now.getUTCMinutes()).padStart(2, '0')}`;
-        isCurrentlyOpen = current >= settings.working_hours_from && current <= settings.working_hours_to;
-    }
-
-    res.json({
-        success: true,
-        data: { ...settings, is_currently_open: isCurrentlyOpen },
-    });
+    res.json({ success: true, data: settings });
 }));
 
+// PUT /api/admin/settings — admin only (global settings)
 router.put('/', authMiddleware, asyncHandler(async (req, res) => {
-    const { delivery_fee, min_order_amount, working_hours_from, working_hours_to, is_open } = req.body;
+    if (req.admin.role !== 'superadmin') {
+        const { AppError } = require('../../middleware/errorHandler');
+        throw new AppError('Только суперадмин', 403);
+    }
+
+    const { restaurant_name, currency, logo_url, contact_phone, contact_email, telegram_channel, about_text } = req.body;
 
     const { rows: existing } = await pool.query('SELECT id FROM restaurant_settings ORDER BY id LIMIT 1');
 
@@ -42,17 +31,19 @@ router.put('/', authMiddleware, asyncHandler(async (req, res) => {
     if (existing.length) {
         result = await pool.query(
             `UPDATE restaurant_settings SET
-                                            delivery_fee=$1, min_order_amount=$2, working_hours_from=$3, working_hours_to=$4, is_open=$5
-             WHERE id=$6 RETURNING *`,
-            [delivery_fee ?? 150, min_order_amount ?? 0, working_hours_from ?? '10:00',
-                working_hours_to ?? '23:00', is_open ?? true, existing[0].id]
+                                            restaurant_name=$1, currency=$2, logo_url=$3,
+                                            contact_phone=$4, contact_email=$5, telegram_channel=$6, about_text=$7
+             WHERE id=$8 RETURNING *`,
+            [restaurant_name || 'Food Delivery', currency || 'сом', logo_url || null,
+                contact_phone || null, contact_email || null, telegram_channel || null,
+                about_text || null, existing[0].id]
         );
     } else {
         result = await pool.query(
-            `INSERT INTO restaurant_settings (delivery_fee, min_order_amount, working_hours_from, working_hours_to, is_open)
-             VALUES ($1,$2,$3,$4,$5) RETURNING *`,
-            [delivery_fee ?? 150, min_order_amount ?? 0, working_hours_from ?? '10:00',
-                working_hours_to ?? '23:00', is_open ?? true]
+            `INSERT INTO restaurant_settings (restaurant_name, currency, logo_url, contact_phone, contact_email, telegram_channel, about_text)
+             VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+            [restaurant_name || 'Food Delivery', currency || 'сом', logo_url || null,
+                contact_phone || null, contact_email || null, telegram_channel || null, about_text || null]
         );
     }
 

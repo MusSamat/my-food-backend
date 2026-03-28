@@ -58,6 +58,7 @@ app.use('/api/admin/users', require('./modules/users/admin.routes'));
 app.use('/api/admin/stats', require('./modules/stats/routes'));
 app.use('/api/admin/settings', require('./modules/settings/routes'));
 app.use('/api/admin/branches', require('./modules/branches/routes'));
+app.use('/api/admin/admins', require('./modules/admins/routes'));
 
 // ═══ PRINT роуты (admin) ═══
 app.use('/api/admin', require('./modules/print/routes'));
