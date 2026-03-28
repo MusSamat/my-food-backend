@@ -116,7 +116,7 @@ router.post('/', asyncHandler(async (req, res) => {
                 office_id, comment, cutlery_count,
                 subtotal, discount, delivery_fee, total,
                 promo_id, promo_code, status, payment_status, branch_id)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,'pending_payment','pending')
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,'pending_payment','pending', $20)
              RETURNING *`,
             [telegram_user_id, telegram_username || null, type || 'delivery', name, phone,
                 address || null, apartment || null, floor || null, entrance || null, courier_comment || null,
