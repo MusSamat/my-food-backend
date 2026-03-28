@@ -44,13 +44,14 @@ router.post('/', asyncHandler(async (req, res) => {
         type, name, phone,
         address, apartment, floor, entrance, courier_comment,
         office_id, comment, cutlery_count,
-        items, promo_code,
+        items, promo_code, branch_id
     } = req.body;
 
     // ─── Валидация ───
     if (!telegram_user_id) throw new AppError('telegram_user_id обязателен', 400);
     if (!name || !phone) throw new AppError('Имя и телефон обязательны', 400);
     if (!items || !items.length) throw new AppError('Корзина пуста', 400);
+    if (!branch_id) throw new AppError('Ошибка: Не выбран филиал для оформления заказа. Пожалуйста, выберите точку на главной.', 400);
     if (type === 'delivery' && !address) throw new AppError('Укажите адрес доставки', 400);
 
     // ─── Проверяем время работы ───
@@ -114,13 +115,13 @@ router.post('/', asyncHandler(async (req, res) => {
                 address, apartment, floor, entrance, courier_comment,
                 office_id, comment, cutlery_count,
                 subtotal, discount, delivery_fee, total,
-                promo_id, promo_code, status, payment_status)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,'pending_payment','pending')
+                promo_id, promo_code, status, payment_status, branch_id)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,'pending_payment','pending')
              RETURNING *`,
             [telegram_user_id, telegram_username || null, type || 'delivery', name, phone,
                 address || null, apartment || null, floor || null, entrance || null, courier_comment || null,
                 office_id || null, comment || null, cutlery_count || 1,
-                subtotal, discount, deliveryFee, total, promoId, promoCodeStr]
+                subtotal, discount, deliveryFee, total, promoId, promoCodeStr, branch_id || null]
         );
 
         for (const oi of orderItems) {
