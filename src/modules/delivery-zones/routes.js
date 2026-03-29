@@ -5,39 +5,79 @@ const authMiddleware = require('../../middleware/auth');
 
 const router = Router();
 
-// PUBLIC: get zones (for mini app to calculate fee)
+// Point-in-polygon algorithm (ray casting)
+const pointInPolygon = (point, polygon) => {
+    if (!polygon || polygon.length < 3) return false;
+    const [px, py] = point;
+    let inside = false;
+    for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+        const [xi, yi] = polygon[i];
+        const [xj, yj] = polygon[j];
+        if (((yi > py) !== (yj > py)) && (px < (xj - xi) * (py - yi) / (yj - yi) + xi)) {
+            inside = !inside;
+        }
+    }
+    return inside;
+};
+
+// PUBLIC: all active zones
 router.get('/', asyncHandler(async (req, res) => {
     const { rows } = await pool.query('SELECT * FROM delivery_zones WHERE is_active = true ORDER BY sort_order');
     res.json({ success: true, data: rows });
 }));
 
-// Check which zone a point falls into
+// PUBLIC: check which zone a coordinate falls into
 router.post('/check', asyncHandler(async (req, res) => {
     const { lat, lng } = req.body;
     if (!lat || !lng) throw new AppError('lat и lng обязательны', 400);
 
     const { rows: zones } = await pool.query('SELECT * FROM delivery_zones WHERE is_active = true ORDER BY sort_order');
 
-    // Point-in-polygon check
-    const isInside = (point, polygon) => {
-        let inside = false;
-        for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
-            const xi = polygon[i][0], yi = polygon[i][1];
-            const xj = polygon[j][0], yj = polygon[j][1];
-            if (((yi > point[1]) !== (yj > point[1])) && (point[0] < (xj - xi) * (point[1] - yi) / (yj - yi) + xi)) {
-                inside = !inside;
-            }
-        }
-        return inside;
-    };
-
-    const matchedZone = zones.find(z => z.polygon && isInside([lat, lng], z.polygon));
+    const matched = zones.find(z => z.polygon && pointInPolygon([lat, lng], z.polygon));
 
     res.json({
         success: true,
-        data: matchedZone ? { zone_id: matchedZone.id, name: matchedZone.name, fee: matchedZone.fee, min_order: matchedZone.min_order }
+        data: matched
+            ? { zone_id: matched.id, name: matched.name, fee: matched.fee, min_order: matched.min_order }
             : null,
     });
+}));
+
+// PUBLIC: geocode address → find zone (for typed addresses)
+router.post('/check-address', asyncHandler(async (req, res) => {
+    const { address } = req.body;
+    if (!address) throw new AppError('address обязателен', 400);
+
+    // Geocode via Nominatim (free, no API key)
+    try {
+        const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(address + ', Бишкек, Кыргызстан')}&format=json&limit=1`;
+        const response = await fetch(url, {
+            headers: { 'User-Agent': 'FoodDeliveryApp/1.0' },
+        });
+        const results = await response.json();
+
+        if (!results.length) {
+            return res.json({ success: true, data: null, geocoded: false });
+        }
+
+        const lat = parseFloat(results[0].lat);
+        const lng = parseFloat(results[0].lon);
+
+        // Check zones
+        const { rows: zones } = await pool.query('SELECT * FROM delivery_zones WHERE is_active = true ORDER BY sort_order');
+        const matched = zones.find(z => z.polygon && pointInPolygon([lat, lng], z.polygon));
+
+        res.json({
+            success: true,
+            data: matched
+                ? { zone_id: matched.id, name: matched.name, fee: matched.fee, min_order: matched.min_order, lat, lng }
+                : null,
+            geocoded: true,
+            coordinates: { lat, lng },
+        });
+    } catch {
+        res.json({ success: true, data: null, geocoded: false });
+    }
 }));
 
 // ADMIN
