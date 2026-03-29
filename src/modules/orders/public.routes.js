@@ -1,4 +1,5 @@
 const { Router } = require('express');
+const { emitNewOrder } = require('../websocket');
 const pool = require('../../db/pool');
 const { asyncHandler, AppError } = require('../../middleware/errorHandler');
 const { createPayment } = require('../payments/service');
@@ -145,6 +146,8 @@ router.post('/', asyncHandler(async (req, res) => {
         });
         await pool.query('UPDATE orders SET payment_id = $1, payment_url = $2 WHERE id = $3',
             [paymentId, paymentUrl, result.order.id]);
+
+        emitNewOrder(result.order);
 
         res.status(201).json({ success: true, data: { order_id: result.order.id, total: result.order.total, payment_url: paymentUrl } });
     } catch (err) {

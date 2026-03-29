@@ -1,4 +1,5 @@
 const { Router } = require('express');
+const { emitOrderUpdate } = require('../websocket');
 const pool = require('../../db/pool');
 const { asyncHandler, AppError } = require('../../middleware/errorHandler');
 const authMiddleware = require('../../middleware/auth');
@@ -113,6 +114,9 @@ router.patch('/:id/status', asyncHandler(async (req, res) => {
     }
 
     await pool.query('UPDATE orders SET status = $1 WHERE id = $2', [status, req.params.id]);
+
+    emitOrderUpdate({ id: parseInt(req.params.id), status, branch_id: order.branch_id });
+    
     await pool.query('INSERT INTO order_status_history (order_id, status, changed_by) VALUES ($1,$2,$3)', [req.params.id, status, req.admin.username]);
     sendOrderNotification(order.telegram_user_id, order.id, status).catch(console.error);
 

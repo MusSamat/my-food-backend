@@ -43,6 +43,7 @@ app.use('/api/settings', require('./modules/settings/routes'));
 app.use('/api/favorites', require('./modules/favorites/routes'));
 app.use('/api/reviews', require('./modules/reviews/routes'));
 app.use('/api/branches', require('./modules/branches/routes'));
+app.use('/api/delivery-zones', require('./modules/delivery-zones/routes'));
 
 // ═══ WEBHOOK (Finik) ═══
 app.use('/api/webhooks', require('./modules/payments/routes'));
@@ -59,6 +60,7 @@ app.use('/api/admin/stats', require('./modules/stats/routes'));
 app.use('/api/admin/settings', require('./modules/settings/routes'));
 app.use('/api/admin/branches', require('./modules/branches/routes'));
 app.use('/api/admin/admins', require('./modules/admins/routes'));
+app.use('/api/admin/delivery-zones', require('./modules/delivery-zones/routes'));
 
 // ═══ PRINT роуты (admin) ═══
 app.use('/api/admin', require('./modules/print/routes'));
@@ -117,8 +119,13 @@ const start = async () => {
         // Запуск Telegram бота
         initBot();
 
+        const http = require('http');
+        const { initWebSocket } = require('./modules/websocket');
+        const server = http.createServer(app);
+        initWebSocket(server);
+
         // Запуск сервера
-        app.listen(config.port, () => {
+        server.listen(config.port, () => {
             console.log(`🚀 Server running on port ${config.port} (${config.nodeEnv})`);
             console.log(`📡 API: http://localhost:${config.port}/api`);
             console.log(`📖 Docs: http://localhost:${config.port}/api/docs`);
