@@ -5,7 +5,7 @@ const authMiddleware = require('../../middleware/auth');
 
 const router = Router();
 
-// Point-in-polygon algorithm (ray casting)
+// Point-in-polygon (ray casting)
 const pointInPolygon = (point, polygon) => {
     if (!polygon || polygon.length < 3) return false;
     const [px, py] = point;
@@ -20,20 +20,35 @@ const pointInPolygon = (point, polygon) => {
     return inside;
 };
 
-// PUBLIC: all active zones
+// Parse polygon safely (handles double-stringify)
+const parsePoly = (polygon) => {
+    if (!polygon) return null;
+    if (typeof polygon === 'string') {
+        try { return JSON.parse(polygon); } catch { return null; }
+    }
+    return polygon;
+};
+
+// ═══ PUBLIC ═══
+
+// GET /api/delivery-zones
 router.get('/', asyncHandler(async (req, res) => {
     const { rows } = await pool.query('SELECT * FROM delivery_zones WHERE is_active = true ORDER BY sort_order');
-    res.json({ success: true, data: rows });
+    const data = rows.map(z => ({ ...z, polygon: parsePoly(z.polygon) }));
+    res.json({ success: true, data });
 }));
 
-// PUBLIC: check which zone a coordinate falls into
+// POST /api/delivery-zones/check — check coords against zones
 router.post('/check', asyncHandler(async (req, res) => {
     const { lat, lng } = req.body;
     if (!lat || !lng) throw new AppError('lat и lng обязательны', 400);
 
     const { rows: zones } = await pool.query('SELECT * FROM delivery_zones WHERE is_active = true ORDER BY sort_order');
 
-    const matched = zones.find(z => z.polygon && pointInPolygon([lat, lng], z.polygon));
+    const matched = zones.find(z => {
+        const poly = parsePoly(z.polygon);
+        return poly && poly.length >= 3 && pointInPolygon([parseFloat(lat), parseFloat(lng)], poly);
+    });
 
     res.json({
         success: true,
@@ -43,12 +58,11 @@ router.post('/check', asyncHandler(async (req, res) => {
     });
 }));
 
-// PUBLIC: geocode address → find zone (for typed addresses)
+// POST /api/delivery-zones/check-address — geocode address then check zone
 router.post('/check-address', asyncHandler(async (req, res) => {
     const { address } = req.body;
     if (!address) throw new AppError('address обязателен', 400);
 
-    // Geocode via Nominatim (free, no API key)
     try {
         const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(address + ', Бишкек, Кыргызстан')}&format=json&limit=1`;
         const response = await fetch(url, {
@@ -63,9 +77,11 @@ router.post('/check-address', asyncHandler(async (req, res) => {
         const lat = parseFloat(results[0].lat);
         const lng = parseFloat(results[0].lon);
 
-        // Check zones
         const { rows: zones } = await pool.query('SELECT * FROM delivery_zones WHERE is_active = true ORDER BY sort_order');
-        const matched = zones.find(z => z.polygon && pointInPolygon([lat, lng], z.polygon));
+        const matched = zones.find(z => {
+            const poly = parsePoly(z.polygon);
+            return poly && poly.length >= 3 && pointInPolygon([lat, lng], poly);
+        });
 
         res.json({
             success: true,
@@ -80,26 +96,30 @@ router.post('/check-address', asyncHandler(async (req, res) => {
     }
 }));
 
-// ADMIN
+// ═══ ADMIN ═══
 router.use(authMiddleware);
 
 router.post('/', asyncHandler(async (req, res) => {
     const { name, fee, min_order, polygon } = req.body;
     if (!name) throw new AppError('name обязательно', 400);
+    const polyValue = typeof polygon === 'string' ? polygon : JSON.stringify(polygon || []);
     const { rows } = await pool.query(
-        'INSERT INTO delivery_zones (name, fee, min_order, polygon) VALUES ($1,$2,$3,$4) RETURNING *',
-        [name, fee || 0, min_order || 0, JSON.stringify(polygon || [])]
+        'INSERT INTO delivery_zones (name, fee, min_order, polygon) VALUES ($1,$2,$3,$4::jsonb) RETURNING *',
+        [name, fee || 0, min_order || 0, polyValue]
     );
+    rows[0].polygon = parsePoly(rows[0].polygon);
     res.status(201).json({ success: true, data: rows[0] });
 }));
 
 router.put('/:id', asyncHandler(async (req, res) => {
     const { name, fee, min_order, polygon, is_active } = req.body;
+    const polyValue = typeof polygon === 'string' ? polygon : JSON.stringify(polygon || []);
     const { rows } = await pool.query(
-        'UPDATE delivery_zones SET name=$1, fee=$2, min_order=$3, polygon=$4, is_active=$5 WHERE id=$6 RETURNING *',
-        [name, fee, min_order, JSON.stringify(polygon || []), is_active ?? true, req.params.id]
+        'UPDATE delivery_zones SET name=$1, fee=$2, min_order=$3, polygon=$4::jsonb, is_active=$5 WHERE id=$6 RETURNING *',
+        [name, fee, min_order, polyValue, is_active ?? true, req.params.id]
     );
     if (!rows.length) throw new AppError('Не найдена', 404);
+    rows[0].polygon = parsePoly(rows[0].polygon);
     res.json({ success: true, data: rows[0] });
 }));
 
