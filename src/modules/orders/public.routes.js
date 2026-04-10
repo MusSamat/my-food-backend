@@ -6,15 +6,21 @@ const { createPayment } = require('../payments/service');
 const { autoPrintIfEnabled } = require('../print/service');
 
 const router = Router();
-
 // ─── Helper: get restaurant settings ───
 const getSettings = async () => {
     const { rows } = await pool.query('SELECT * FROM restaurant_settings LIMIT 1');
     return rows[0] || { delivery_fee: 150, min_order_amount: 0, working_hours_from: '10:00', working_hours_to: '23:00', is_open: true };
 };
 
+const getBranchSettings = async (branch_id) => {
+    if (!branch_id) return null;
+    const { rows } = await pool.query('SELECT * FROM branches WHERE id = $1', [branch_id]);
+    return rows[0] || null;
+};
+
 const isRestaurantOpen = (settings) => {
     if (!settings.is_open) return false;
+    if (settings.is_24h) return true;
     const now = new Date();
     const current = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
     return current >= settings.working_hours_from && current <= settings.working_hours_to;
@@ -57,8 +63,10 @@ router.post('/', asyncHandler(async (req, res) => {
 
     // ─── Проверяем время работы ───
     const settings = await getSettings();
-    if (!isRestaurantOpen(settings)) {
-        throw new AppError(`Ресторан закрыт. Время работы: ${settings.working_hours_from} — ${settings.working_hours_to}`, 400);
+    const branchSettings = await getBranchSettings(branch_id);
+    const openSettings = branchSettings || settings;
+    if (!isRestaurantOpen(openSettings)) {
+        throw new AppError(`Ресторан закрыт. Время работы: ${openSettings.working_hours_from} — ${openSettings.working_hours_to}`, 400);
     }
 
     const result = await pool.transaction(async (client) => {
@@ -83,8 +91,8 @@ router.post('/', asyncHandler(async (req, res) => {
         }
 
         // ─── Проверяем минимальный заказ ───
-        if (settings.min_order_amount > 0 && subtotal < settings.min_order_amount) {
-            throw new AppError(`Минимальная сумма заказа: ${settings.min_order_amount} сом`, 400);
+        if (openSettings.min_order_amount > 0 && subtotal < openSettings.min_order_amount) {
+            throw new AppError(`Минимальная сумма заказа: ${openSettings.min_order_amount} сом`, 400);
         }
 
         // ─── Промокод ───
@@ -108,7 +116,7 @@ router.post('/', asyncHandler(async (req, res) => {
         }
 
         // ─── Доставка из настроек ───
-        const deliveryFee = type === 'delivery' ? settings.delivery_fee : 0;
+        const deliveryFee = type === 'delivery' ? openSettings.delivery_fee : 0;
         const total = subtotal - discount + deliveryFee;
 
         const { rows: [order] } = await client.query(

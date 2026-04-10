@@ -9,6 +9,7 @@ build/
 .env
 .env.local
 .env.*.local
+.cursorrules
 
 # Логи и временные файлы
 npm-debug.log*
